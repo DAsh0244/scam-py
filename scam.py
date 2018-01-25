@@ -1,0 +1,294 @@
+#/bin/env python3
+'''
+python port of scam.m a matlab script for arbitrary symbolic nodal analysis 
+from scam.m
+%This program takes a netlist (similar to SPICE), parses it to derive the
+%circuit equations, then solves them symbolically.  
+%
+%Full documentation available at www.swarthmore.edu/NatSci/echeeve1/Ref/mna/MNA1.html
+%
+'''
+
+__author__ = 'Danyal Ahsanullah'
+__email__ = 'danyal.ahsanullah@gmail.com'
+
+__version_info__ = (0,1,0)
+__version__ = '.'.join(map(str, __version_info__))
+
+import numpy as np
+import sympy as sym
+import datetime
+from collections import namedtuple
+from itertools import chain
+
+_UNSUPPORTED = 'QDZ'
+
+# record containers for differing circuit elements
+_Element = namedtuple('Element', 'Name Node1 Node2 Value')
+_Vsource = namedtuple('Vsource', 'Name Node1 Node2 Value')
+_Isource = namedtuple('Isource', 'Name Node1 Node2 Value')
+_Opamp = namedtuple('Opamp', 'Name Node1 Node2 Node3')
+
+# some flag that i can prolly axe -- controls printing a first time info msg i think
+FirstTime_rjla = True
+
+# sympy print init -- still prints weird on my console unless disable unicode,
+# and even then it seems to be limited to the 80 char console limit even if i use a larger console
+# sym.init_printing()
+# sym.init_printing(use_latex=False)
+sym.init_printing(use_unicode=False, use_latex=False)
+
+
+def scam(fname):
+    global FirstTime_rjla
+    if FirstTime_rjla:
+        print('scam.py - a python port of scam.m')
+        print('Full documentation available at www.swarthmore.edu/NatSci/echeeve1/Ref/mna/MNA1.html')
+    
+    print('\n\nStarted -- please be patient.\n\n', end='')
+    
+    with open(fname,'r') as file:
+        d = np.loadtxt(file, delimiter=' ', 
+           dtype={'names': ('Name', 'N1', 'N2', 'ARG3'),
+           'formats': ('U3', 'i4', 'i4', 'U15')})    
+
+    # for row in d:
+        # print('Name:{Name} N1:{N1} N2:{N2} arg3:{arg3}'.format(Name=row['Name'], 
+                                                               # N1=row['N1'], 
+                                                               # N2=row['N2'], 
+                                                               # arg3=row['arg3']))
+    
+    # crude timer
+    start_time = datetime.datetime.now()
+    
+    # Initialize
+    numElem = 0  # Number of passive elements.
+    numV = 0     # Number of independent voltage sources
+    numO = 0     # Number of op amps
+    numI = 0     # Number of independent current sources
+    numNode = 0  # Number of nodes, not including ground (node 0).
+    Element = []
+    Vsource = []
+    Opamp = []
+    Isource = []
+    
+    # Parse the input file
+    for name, n1, n2, arg3 in d:
+        desig = name[0]
+        if desig in 'RLC':  # passive elements
+            numElem+=1;
+            try:
+                val = float(arg3)
+            except ValueError:
+                val = np.nan
+            Element.append(_Element(Name=name, Node1=n1, Node2=n2, Value=val))
+        elif desig == 'V':  # voltage sources
+            numV+=1;
+            try:
+                val = float(arg3)
+            except ValueError:
+                val = np.nan
+            Vsource.append(_Vsource(Name=name, Node1=n1, Node2=n2, Value=val))
+        elif desig == 'I':  #current sources
+            numI+=1;
+            try:
+                val = float(arg3)
+            except ValueError:
+                val = np.nan
+            Isource.append(_Isource(Name=name, Node1=n1, Node2=n2, Value=val))
+        elif desig == 'O':  # opamps
+            numO+=1;
+            Opamp.append(_Opamp(Name=name, Node1=n1, Node2=n2, Node3=arg3))
+        elif desig in _UNSUPPORTED:
+            raise ValueError('Unsupported component type {!s}'.format(name))
+        else:
+            raise ValueError('Unknown component type {!s}'.format(name))
+        numNode=max(n1,n2,numNode)
+    # numElem = len(Element)
+    # numV = len(Vsource)
+    # numI = len(Isource)
+    # numO = len(Opamp)
+
+    # Preallocate matrices #################################
+    G = sym.zeros(numNode,numNode)
+    V = sym.zeros(numNode,1)
+    I = sym.zeros(numNode,1)
+    if (numV+numO)!=0:
+        B = sym.zeros(numNode,numV+numO)
+        C = sym.zeros(numV+numO,numNode)
+        D = sym.zeros(numV+numO,numV+numO)
+        E = sym.zeros(numV+numO,1)
+        J = sym.zeros(numV+numO,1)
+    # Done preallocating matrices  -------------------------------------
+
+    # Fill the G matrix ##################################################
+    # Initially, make the G Matrix all zeros.
+    # Now fill the G matrix with conductances from netlist
+    for element in Element:
+        n1 = element.Node1 - 1
+        n2 = element.Node2 - 1
+        # Make up a string with the conductance of current element.
+        if element.Name[0] == 'R':
+                g = '1/{}'.format(element.Name)
+        elif element.Name[0] == 'L':
+                g = '1/s/{}'.format(element.Name)
+        elif element.Name[0] == 'C':
+                g = 's*{}'.format(element.Name)
+        else:
+            raise ValueError('Unknown component type {!s}'.format(element.Name))
+        # If neither side of the element is connected to ground
+        # then subtract it from appropriate location in matrix.
+        if n1 != -1 and n2 !=  -1:
+            G[n1,n2] = '{}-{}'.format(G[n1,n2],g)
+            G[n2,n1] = '{}-{}'.format(G[n2,n1],g)
+        
+        # If node 1 is connected to ground, add element to diagonal
+        # of matrix.
+        if n1 != -1:
+            G[n1,n1] = '{}+{}'.format(G[n1,n1],g)
+        # Ditto for node 2.
+        if n2 != -1:
+            G[n2,n2] = '{}+{}'.format(G[n2,n2],g)
+    # The G matrix is finished -------------------------------------------
+ 
+    
+    
+    # Fill the I matrix ##################################################
+    for j in range(numNode):
+        for isource in Isource:
+            if isource.Node1 == j+1:
+                I[j] = '{}-{}'.format(I[j],isource.Name)
+            elif isource.Node2 == j+1:
+                I[j] = '{}+{}'.format(I[j],isource.Name)
+    # The I matrix is done -----------------------------------------------
+
+    # Fill the V matrix ##################################################
+    for i in range(numNode):
+        V[i] = 'v_{}'.format(i+1)
+    # The V matrix is finished -------------------------------------------
+
+    
+    # other matrix stuff
+    if (numV+numO) != 0:
+        # %Fill the B matrix ##################################################
+        # %Initially, fill with zeros.        
+        # %First handle the case of the independent voltage sources.
+        for i, vsource in enumerate(Vsource):  # Go through each independent source.
+            for j in range(numNode):           # Go through each node.
+                if vsource.Node1 == j+1:           # If node is first node,
+                    B[j,i] = '1'               # then put '1' in the matrices.
+                elif vsource.Node2 == j+1:         # If second node, put -1.
+                    B[j,i] = '-1'
+        
+        # %Now handle the case of the Op Amp
+        for i, opamp in enumerate(Opamp):
+            for j in range(numNode):
+                if opamp.Node3 == j+1:
+                    B[j,i+numV] = '1'
+                else:
+                    B[j,i+numV] = '0'
+        # %The B matrix is finished -------------------------------------------
+        
+        
+        # %Fill the C matrix ##################################################
+        # %Initially, fill with zeros.        
+        # %First handle the case of the independent voltage sources.
+        for i, vsource in enumerate(Vsource):  # Go through each independent source.
+            for j in range(numNode):           # Go through each node.
+                if vsource.Node1 == j+1:           # If node is first node,
+                    C[i,j] = '1'               # then put '1' in the matrices.
+                elif vsource.Node2 == j+1:         # If second node, put -1.
+                    C[i,j] = '-1'
+        
+        # %Now handle the case of the Op Amp
+        for i, opamp in enumerate(Opamp):
+            for j in range(numNode):
+                if opamp.Node1 == j+1:
+                    C[i+numV,j] = '1'
+                elif opamp.Node2 == j+1:
+                    C[i+numV,j] = '-1'
+                else:
+                    C[i+numV,j] = '0'
+        # %The C matrix is finished ------------------------------------------
+        
+        
+        # %Fill the D matrix ##################################################
+        # %The D matrix is non-zero only for CCVS and VCVS (not included
+        # %in this simple implementation of SPICE)
+        #
+        # future Code Here
+        #
+        # %The D matrix is finished -------------------------------------------
+        
+        # %Fill the E matrix ##################################################
+        # Starts with all zeros
+        for i,vsource in enumerate(Vsource):
+            E[i] = vsource.Name
+        # %The E matrix is finished -------------------------------------------
+        
+        # %Fill the J matrix ##################################################
+        for i,vsource in enumerate(Vsource):
+            J[i]= 'I_{}'.format(vsource.Name)
+        for i, opamp in enumerate(Opamp):
+            J[i+numV] = 'I_{}'.format(opamp.Name)
+        # %The J matrix is finished -------------------------------------------
+
+        # %Form the A, X, and Z matrices (As cell arrays of strings).
+        # G = Matrix([['0+1/R1+1/s/L1', '0-1/R1', '0-1/s/L1'],
+        #             ['0-1/R1', '0+1/R1+1/R2+1/s/L2', '0-1/R2'],
+        #             ['0-1/s/L1', '0-1/R2', '0+1/R2+1/s/L1+1/s/L3']]
+        #           )
+        # D = Matrix([0])
+        # B = Matrix([[1],[0],[0]])
+        # C = Matrix([[1,0,0]])
+        # A = (G.row_join(B)).col_join(C.row_join(D))
+
+    if (numV+numO) !=0:
+        A = G.row_join(B).col_join(C.row_join(D))
+        X = V.col_join(J)
+        Z = I.col_join(E)
+    else:
+        A = G
+        X = V
+        Z = I
+    
+    # Solve matrix equation - this is the meat of the algorithm.   
+    V = sym.simplify(A.inv()*Z);
+
+        
+    # # %Evaluate each of the unknowns in the matrix X.
+    nodes = dict()
+    for var, val in zip(X[:],V[:]):
+        nodes[str(var)] = val
+    
+    # sub in values: 
+    Sol = sym.simplify(V.subs([(elem.Name, elem.Value) for elem in chain(Element,Vsource,Isource)  if elem.Value is not np.nan]))
+
+
+    print('Done! Elapsed time = {!s}.'.format(datetime.datetime.now()-start_time))
+    
+    print('Netlist')
+    for row in d:
+        print('{Name} {N1} {N2} {arg3}'.format(Name=row['Name'], N1=row['N1'], 
+                                               N2=row['N2'], arg3=row['ARG3']))
+    
+    print('\nSolved variables:')
+    for entry in X[:]:
+        print(entry)
+    print('')
+    
+    if FirstTime_rjla:
+        print('scam.py - a python port of scam.m')
+        print('Full documentation available at www.swarthmore.edu/NatSci/echeeve1/Ref/mna/MNA1.html')
+        FirstTime_rjla = False
+    
+    # because scam.m was a script to run and use in matlab cmd window, have to return a bunch of things
+    return Sol, V, A, X, Z, nodes
+
+if __name__ == '__main__':
+    import sys
+    from code import interact    
+    Sol, V, A, X, Z, nodes = scam(sys.argv[1])
+    interact(local=dict(globals(), **locals())) 
+    
+    sys.exit()
