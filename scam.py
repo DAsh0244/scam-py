@@ -15,11 +15,16 @@ __email__ = 'danyal.ahsanullah@gmail.com'
 __version_info__ = (0,1,0)
 __version__ = '.'.join(map(str, __version_info__))
 
+# maybe needed for sympy.preview function
+# import os
+# os.environ['PYGLET_SHADOW_WINDOW']="0"
+
 import numpy as np
 import sympy as sym
 from datetime import datetime, timedelta
 from collections import namedtuple
 from itertools import chain
+
 
 _UNSUPPORTED = 'QDZ'
 RUNTIME = timedelta(0)
@@ -143,7 +148,7 @@ def scam(fname):
     for element in Elements:
         n1 = element.Node1 - 1
         n2 = element.Node2 - 1
-        desig = name[0]
+        desig = element.Name[0]
         # Make up a string with the conductance of current element.
         if desig == 'R':
                 g = '1/{}'.format(element.Name)
@@ -153,6 +158,7 @@ def scam(fname):
                 g = 's*{}'.format(element.Name)
         else:
             raise ValueError('Unknown component type {!s}'.format(element.Name))
+
         # If neither side of the element is connected to ground
         # then subtract it from appropriate location in matrix.
         if n1 != -1 and n2 !=  -1:
@@ -167,6 +173,7 @@ def scam(fname):
         if n2 != -1:
             G[n2,n2] = '{}+{}'.format(G[n2,n2],g)
     # The G matrix is finished -------------------------------------------   
+
     # Fill the I matrix ##################################################
     for j in nodes:
         for isource in Isources:
@@ -214,7 +221,7 @@ def scam(fname):
                     C[i,j] = '1'               # then put '1' in the matrices.
                 elif vsource.Node2 == j+1:         # If second node, put -1.
                     C[i,j] = '-1'
-        
+
         # %Now handle the case of the Op Amp
         for i, opamp in enumerate(Opamp):
             for j in nodes:
@@ -225,8 +232,7 @@ def scam(fname):
                 else:
                     C[i+numV,j] = '0'
         # %The C matrix is finished ------------------------------------------
-        
-        
+
         # %Fill the D matrix ##################################################
         # %The D matrix is non-zero only for CCVS and VCVS (not included
         # %in this simple implementation of SPICE)
@@ -268,13 +274,13 @@ def scam(fname):
         Z = I
 
     # Solve matrix equation - this is the meat of the algorithm.   
-    V = sym.cancel(A.inv()*Z);
+    V = sym.factor(A.inv()*Z)
 
     # %Evaluate each of the unknowns in the matrix X.
     nodes = dict()
     for var, val in zip(X[:],V[:]):
         nodes[str(var)] = val 
-    
+
     # sub in values: 
     Sol = sym.cancel(V.subs([(elem.Name, elem.Value) for elem in chain(Elements,Vsources,Isources) if elem.Value is not np.nan]))
 
@@ -298,7 +304,7 @@ def scam(fname):
         FirstTime_rjla = False
     
     # because scam.m was a script to run and use in matlab cmd window, have to return a bunch of things
-    return Sol, V, A, X, Z, nodes
+    return Sol, V, A, X, Z, nodes, Elements,Vsources,Isources
 
 import time
 def timing(f, n, a):
@@ -312,8 +318,9 @@ def timing(f, n, a):
     
 if __name__ == '__main__':
     import sys
-    # from code import interact    
-    Sol, V, A, X, Z, nodes = scam(sys.argv[1])
+    from code import interact    
+
+    Sol, V, A, X, Z, nodes, Elements,Vsources,Isources = scam(sys.argv[1])
     interact(local=dict(globals(), **locals()))
     # timing(scam, 1,sys.argv[1])
     
