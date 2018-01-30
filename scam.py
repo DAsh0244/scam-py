@@ -47,7 +47,7 @@ FirstTime_rjla = True
 
 # may end up using something like this for building data matrix,
 # bytearray append/extend for building string and then a final conversion for feeding to sympy
-# should avoid str reallocation on every build 
+# should avoid str reallocation and sympify-ing on every build 
 # class StrMatrix:
     # """matrix of byte arrays for dynamically building strings in the form of a matrix"""
     # def __init__(self, row,col, initial='0', encoding='ascii', *args, **kwargs):
