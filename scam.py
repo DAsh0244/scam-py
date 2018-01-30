@@ -1,4 +1,4 @@
-#/bin/env python3
+#! /bin/env python3
 '''
 python port of scam.m a matlab script for arbitrary symbolic nodal analysis 
 from scam.m
@@ -25,15 +25,16 @@ from datetime import datetime, timedelta
 from collections import namedtuple
 from itertools import chain
 
-
+# _PASSIVE = 'RLC'
+# _SUPPORTED = _PASSIVE + 'OVI'
 _UNSUPPORTED = 'QDZ'
 RUNTIME = timedelta(0)
 
 # record containers for differing circuit elements
-_Element = namedtuple('Element', 'Name Node1 Node2 Value')
-_Vsource = namedtuple('Vsource', 'Name Node1 Node2 Value')
-_Isource = namedtuple('Isource', 'Name Node1 Node2 Value')
-_Opamp = namedtuple('Opamp', 'Name Node1 Node2 Node3')
+_Element = namedtuple('_Element', 'Name Node1 Node2 Value')
+_Vsource = namedtuple('_Vsource', 'Name Node1 Node2 Value')
+_Isource = namedtuple('_Isource', 'Name Node1 Node2 Value')
+_Opamp = namedtuple('_Opamp', 'Name Node1 Node2 Node3')
 
 # some flag that i can prolly axe -- controls printing a first time info msg i think
 FirstTime_rjla = True
@@ -42,24 +43,25 @@ FirstTime_rjla = True
 # and even then it seems to be limited to the 80 char console limit even if i use a larger console
 # sym.init_printing()
 # sym.init_printing(use_latex=False)
-sym.init_printing(use_unicode=False, use_latex=False)
+# sym.init_printing(use_unicode=False, use_latex=False)
 
-# may end up using somethign like this for building data matrix,
+# may end up using something like this for building data matrix,
 # bytearray append/extend for building string and then a final conversion for feeding to sympy
 # should avoid str reallocation on every build 
-class StrMatrix:
-    """matrix of byte arrays for dynamically building strings in the form of a matrix"""
-    def __init__(self, row,col, initial='0', encoding='ascii', *args, **kwargs):
-        self.encoding = encoding
-        self.data = [[bytearray(initial, encoding) for i in range(col)] for i in range(row)]
-    def __getitem__(self, index):
-        return self.data[index[0]][index[1]]
+# class StrMatrix:
+    # """matrix of byte arrays for dynamically building strings in the form of a matrix"""
+    # def __init__(self, row,col, initial='0', encoding='ascii', *args, **kwargs):
+        # self.encoding = encoding
+        # self.data = [[bytearray(initial, encoding) for i in range(col)] for i in range(row)]
+    # def __getitem__(self, index):
+        # return self.data[index[0]][index[1]]
     
 
 
 def scam(fname):
     global FirstTime_rjla
     global RUNTIME 
+    
     if FirstTime_rjla:
         print('scam.py - a python port of scam.m')
         print('Full documentation available at www.swarthmore.edu/NatSci/echeeve1/Ref/mna/MNA1.html')
@@ -81,43 +83,35 @@ def scam(fname):
     start_time = datetime.now()
     
     # Initialize
-    # numElem = 0  # Number of passive elements.
-    # numV = 0     # Number of independent voltage sources
-    # numO = 0     # Number of op amps
-    # numI = 0     # Number of independent current sources
     numNode = 0  # Number of nodes, not including ground (node 0).
     Elements = []
     Vsources = []
-    Opamp = []
+    Opamps = []
     Isources = []
     
     # Parse the input file
     for name, n1, n2, arg3 in d:
         desig = name[0]
         if desig in 'RLC':  # passive elements
-            # numElem+=1;
             try:
                 val = float(arg3)
             except ValueError:
                 val = np.nan
             Elements.append(_Element(Name=name, Node1=n1, Node2=n2, Value=val))
         elif desig == 'V':  # voltage sources
-            # numV+=1;
             try:
                 val = float(arg3)
             except ValueError:
                 val = np.nan
             Vsources.append(_Vsource(Name=name, Node1=n1, Node2=n2, Value=val))
         elif desig == 'I':  #current sources
-            # numI+=1;
             try:
                 val = float(arg3)
             except ValueError:
                 val = np.nan
             Isources.append(_Isource(Name=name, Node1=n1, Node2=n2, Value=val))
         elif desig == 'O':  # opamps
-            # numO+=1;
-            Opamp.append(_Opamp(Name=name, Node1=n1, Node2=n2, Node3=arg3))
+            Opamps.append(_Opamp(Name=name, Node1=n1, Node2=n2, Node3=arg3))
         elif desig in _UNSUPPORTED:
             raise ValueError('Unsupported component type {!s}'.format(name))
         else:
@@ -126,7 +120,7 @@ def scam(fname):
     numElem = len(Elements)
     numV = len(Vsources)
     numI = len(Isources)
-    numO = len(Opamp)
+    numO = len(Opamps)
     nodes = list(range(numNode)) # have to iterate multiple times, build once iterate multi 
 
     # Preallocate matrices #################################
@@ -202,7 +196,7 @@ def scam(fname):
                     B[j,i] = '-1'
         
         # %Now handle the case of the Op Amp
-        for i, opamp in enumerate(Opamp):
+        for i, opamp in enumerate(Opamps):
             for j in nodes:
                 if opamp.Node3 == j+1:
                     B[j,i+numV] = '1'
@@ -223,7 +217,7 @@ def scam(fname):
                     C[i,j] = '-1'
 
         # %Now handle the case of the Op Amp
-        for i, opamp in enumerate(Opamp):
+        for i, opamp in enumerate(Opamps):
             for j in nodes:
                 if opamp.Node1 == j+1:
                     C[i+numV,j] = '1'
@@ -251,7 +245,7 @@ def scam(fname):
         # %Fill the J matrix ##################################################
         for i,vsource in enumerate(Vsources):
             J[i]= 'I_{}'.format(vsource.Name)
-        for i, opamp in enumerate(Opamp):
+        for i, opamp in enumerate(Opamps):
             J[i+numV] = 'I_{}'.format(opamp.Name)
         # %The J matrix is finished -------------------------------------------
 
@@ -277,16 +271,17 @@ def scam(fname):
     V = sym.factor(A.inv()*Z)
 
     # %Evaluate each of the unknowns in the matrix X.
-    nodes = dict()
-    for var, val in zip(X[:],V[:]):
-        nodes[str(var)] = val 
+    # nodes = dict()
+    # for var, val in zip(X[:],V[:]):
+        # nodes[str(var)] = val 
 
     # sub in values: 
     Sol = sym.cancel(V.subs([(elem.Name, elem.Value) for elem in chain(Elements,Vsources,Isources) if elem.Value is not np.nan]))
 
-    this_run = datetime.now()-start_time
-    print('Done! Elapsed time = {!s}.'.format(this_run))
-    RUNTIME += this_run
+    print('Done! Elapsed time = {!s}.'.format(datetime.now()-start_time))
+    # this_run = datetime.now()-start_time
+    # print('Done! Elapsed time = {!s}.'.format(this_run))
+    # RUNTIME += this_run
     
     print('Netlist')
     for row in d:
@@ -302,26 +297,42 @@ def scam(fname):
         print('scam.py - a python port of scam.m')
         print('Full documentation available at www.swarthmore.edu/NatSci/echeeve1/Ref/mna/MNA1.html')
         FirstTime_rjla = False
-    
+    # print(Sol)
     # because scam.m was a script to run and use in matlab cmd window, have to return a bunch of things
     return Sol, V, A, X, Z, nodes, Elements,Vsources,Isources
 
-import time
-def timing(f, n, a):
-    global RUNTIME
-    r = range(n)
-    for i in r:
-        f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a)
-    print(f.__name__, 'avg:',  end='')
-    print(RUNTIME/(10*n))
 
-    
 if __name__ == '__main__':
+    import os 
     import sys
-    from code import interact    
+    import pickle
+    from code import interact 
+    # import time
+    # def timing(f, n, a):
+        # global RUNTIME
+        # r = range(n)
+        # for i in r:
+            # f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a)
+        # print('')
+        # print(f.__name__, 'avg:',  end='')
+        # print(RUNTIME/(10*n))
+    
+    rets = ['Sol','V','A','X','Z','nodes','Elements','Vsources','Isources']
+    fname = sys.argv[1]
+    Sol, V, A, X, Z, nodes, Elements,Vsources,Isources = scam(fname)
+    # interact(local=dict(globals(), **locals()))
+    # timing(scam, 3,sys.argv[1])
 
-    Sol, V, A, X, Z, nodes, Elements,Vsources,Isources = scam(sys.argv[1])
-    interact(local=dict(globals(), **locals()))
-    # timing(scam, 1,sys.argv[1])
+    # outfile = '_'.join([os.path.splitext(fname)[0],'results.pkl' ])
+    outfile = 'test/py_results.pkl'
+    Elements = [{key: val if val is not np.nan else [] for key,val in val._asdict().items()} for val in Elements]
+    Isources = [{key: val if val is not np.nan else [] for key,val in val._asdict().items()} for val in Isources]
+    Vsources = [{key: val if val is not np.nan else [] for key,val in val._asdict().items()} for val in Vsources]
+    Elements = Elements[0] if len(Elements) == 1 else Elements
+    Isources = Isources[0] if len(Isources) == 1 else Isources
+    Vsources = Vsources[0] if len(Vsources) == 1 else Vsources
+    d = { os.path.basename(fname) : {name:eval(name) for name in rets}}
+    with open(outfile, 'wb') as file:
+        pickle.dump(d, file)
     
     sys.exit()
