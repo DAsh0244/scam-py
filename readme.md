@@ -15,6 +15,7 @@ scam.py <netlist-file-path>
 
 ## Changelog
 * 25-Jan-2018 first implementation
+* 29-Jan-2018 initial test suite created
 
 [scam]: https://www.swarthmore.edu/NatSci/echeeve1/Ref/mna/MNA6.html
 [sympy]: http://www.sympy.org/en/index.html
