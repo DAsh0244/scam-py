@@ -71,7 +71,7 @@ def scam(fname):
     with open(fname,'r') as file:
         d = np.loadtxt(file, delimiter=' ', 
            dtype={'names': ('Name', 'N1', 'N2', 'ARG3'),
-           'formats': ('U3', 'i4', 'i4', 'U15')})    
+           'formats': ('U15', 'i4', 'i4', 'U15')})    
 
     # for row in d:
         # print('Name:{Name} N1:{N1} N2:{N2} arg3:{arg3}'.format(Name=row['Name'], 
@@ -324,14 +324,14 @@ if __name__ == '__main__':
     # timing(scam, 3,sys.argv[1])
 
     # outfile = '_'.join([os.path.splitext(fname)[0],'results.pkl' ])
-    outfile = 'test/py_results.pkl'
+    outfile = os.path.join('test','sim_results','{}_python.pkl'.format(os.path.splitext(os.path.basename(fname))[0]))
     Elements = [{key: val if val is not np.nan else [] for key,val in val._asdict().items()} for val in Elements]
     Isources = [{key: val if val is not np.nan else [] for key,val in val._asdict().items()} for val in Isources]
     Vsources = [{key: val if val is not np.nan else [] for key,val in val._asdict().items()} for val in Vsources]
     Elements = Elements[0] if len(Elements) == 1 else Elements
     Isources = Isources[0] if len(Isources) == 1 else Isources
     Vsources = Vsources[0] if len(Vsources) == 1 else Vsources
-    d = { os.path.basename(fname) : {name:eval(name) for name in rets}}
+    d = { 'netlist':os.path.basename(fname), 'contents': {name:eval(name) for name in rets}}
     with open(outfile, 'wb') as file:
         pickle.dump(d, file)
     

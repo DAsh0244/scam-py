@@ -3,7 +3,7 @@ function str = save_json(file_name,vars,base_key)
         base_key = file_name;
     end
     fid = fopen(file_name, 'wt');
-    str = ['{"' base_key '": {'];
+    str = ['{"netlist":"' base_key '", "contents":{'];
     for i=vars
         str = [str i ',' ];
     end
