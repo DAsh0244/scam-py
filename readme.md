@@ -12,6 +12,12 @@ A python implementation of [scam.m][scam], a  matlab symbolic circuit solver scr
 scam.py <netlist-file-path>
 ```
 
+### testing:
+There is now a simple testing workflow:
+1. run `scam.py <netlist-of-interest>` 
+2. run `scam.m \<netlist-of-interest>`
+3. cd to `test` dir
+4. run `run_test.py`
 
 ## Changelog
 * 25-Jan-2018 first implementation
