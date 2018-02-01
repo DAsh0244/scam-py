@@ -11,8 +11,9 @@ from scam.m
 
 __author__ = 'Danyal Ahsanullah'
 __email__ = 'danyal.ahsanullah@gmail.com'
+__url = 'https://github.com/an-oreo/scam-py'
 
-__version_info__ = (0,1,1)
+__version_info__ = (0,1,2)
 __version__ = '.'.join(map(str, __version_info__))
 
 # maybe needed for sympy.preview function
@@ -36,10 +37,10 @@ _Vsource = namedtuple('_Vsource', 'Name Node1 Node2 Value')
 _Isource = namedtuple('_Isource', 'Name Node1 Node2 Value')
 _Opamp = namedtuple('_Opamp', 'Name Node1 Node2 Node3')
 
-# some flag that i can prolly axe -- controls printing a first time info msg i think
+# controls printing a first time info message
 FirstTime_rjla = True
 
-# sympy print init -- still prints weird on my console unless disable unicode,
+# sympy printer init -- still prints weird on my console unless disable unicode,
 # and even then it seems to be limited to the 80 char console limit even if i use a larger console
 # sym.init_printing()
 # sym.init_printing(use_latex=False)
@@ -63,7 +64,7 @@ def scam(fname):
     global RUNTIME 
     
     if FirstTime_rjla:
-        print('scam.py - a python port of scam.m')
+        print('scam.py - a python port of scam.m (v{}) - {}'.format(__version__,__url))
         print('Full documentation available at www.swarthmore.edu/NatSci/echeeve1/Ref/mna/MNA1.html')
     
     print('\n\nStarted -- please be patient.\n\n', end='')
@@ -72,12 +73,6 @@ def scam(fname):
         d = np.loadtxt(file, delimiter=' ', 
            dtype={'names': ('Name', 'N1', 'N2', 'ARG3'),
            'formats': ('U15', 'i4', 'i4', 'U15')})    
-
-    # for row in d:
-        # print('Name:{Name} N1:{N1} N2:{N2} arg3:{arg3}'.format(Name=row['Name'], 
-                                                               # N1=row['N1'], 
-                                                               # N2=row['N2'], 
-                                                               # arg3=row['arg3']))
     
     # crude timer
     start_time = datetime.now()
@@ -294,7 +289,7 @@ def scam(fname):
     print('')
     
     if FirstTime_rjla:
-        print('scam.py - a python port of scam.m')
+        print('scam.py - a python port of scam.m (v{}) - {}'.format(__version__,__url))
         print('Full documentation available at www.swarthmore.edu/NatSci/echeeve1/Ref/mna/MNA1.html')
         FirstTime_rjla = False
     # print(Sol)
@@ -323,7 +318,7 @@ if __name__ == '__main__':
     # interact(local=dict(globals(), **locals()))
     # timing(scam, 3,sys.argv[1])
 
-    # outfile = '_'.join([os.path.splitext(fname)[0],'results.pkl' ])
+    # hacky way of saving test files
     outfile = os.path.join('test','sim_results','{}_python.pkl'.format(os.path.splitext(os.path.basename(fname))[0]))
     Elements = [{key: val if val is not np.nan else [] for key,val in val._asdict().items()} for val in Elements]
     Isources = [{key: val if val is not np.nan else [] for key,val in val._asdict().items()} for val in Isources]
