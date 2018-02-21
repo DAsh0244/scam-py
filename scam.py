@@ -44,19 +44,19 @@ FirstTime_rjla = True
 # and even then it seems to be limited to the 80 char console limit even if i use a larger console
 # sym.init_printing()
 # sym.init_printing(use_latex=False)
+sym.init_printing(use_unicode=False)
 # sym.init_printing(use_unicode=False, use_latex=False)
 
 # may end up using something like this for building data matrix,
 # bytearray append/extend for building string and then a final conversion for feeding to sympy
 # should avoid str reallocation and sympify-ing on every build 
-# class StrMatrix:
-    # """matrix of byte arrays for dynamically building strings in the form of a matrix"""
-    # def __init__(self, row,col, initial='0', encoding='ascii', *args, **kwargs):
-        # self.encoding = encoding
-        # self.data = [[bytearray(initial, encoding) for i in range(col)] for i in range(row)]
-    # def __getitem__(self, index):
-        # return self.data[index[0]][index[1]]
-    
+class StrMatrix:
+    """matrix of byte arrays for dynamically building strings in the form of a matrix"""
+    def __init__(self, row,col, initial='0', encoding='ascii', *args, **kwargs):
+        self.encoding = encoding
+        self.data = [[bytearray(initial, encoding) for i in range(col)] for i in range(row)]
+    def __getitem__(self, index):
+        return self.data[index[0]][index[1]]
 
 
 def scam(fname):
@@ -302,21 +302,29 @@ if __name__ == '__main__':
     import sys
     import pickle
     from code import interact 
-    # import time
-    # def timing(f, n, a):
-        # global RUNTIME
-        # r = range(n)
-        # for i in r:
-            # f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a)
-        # print('')
-        # print(f.__name__, 'avg:',  end='')
-        # print(RUNTIME/(10*n))
+    def timing(f, n, a):
+        global RUNTIME
+        r = range(n)
+        for i in r:
+            f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a)
+        print('')
+        print(f.__name__, 'avg:',  end='')
+        print(RUNTIME/(10*n))
     
     rets = ['Sol','V','A','X','Z','nodes','Elements','Vsources','Isources']
     fname = sys.argv[1]
     Sol, V, A, X, Z, nodes, Elements,Vsources,Isources = scam(fname)
-    # interact(local=dict(globals(), **locals()))
-    # timing(scam, 3,sys.argv[1])
+    # hacky cli
+    try: 
+        if sys.argv[2] == '-i':
+            interact(local=dict(globals(), **locals()))
+        elif sys.argv[2] == '-t': 
+            try: 
+                timing(scam, int(sys.argv[3]), sys.argv[1])
+            except IndexError:
+                timing(scam, 3, sys.argv[1])
+    except IndexError:
+        pass
 
     # hacky way of saving test files
     outfile = os.path.join('test','sim_results','{}_python.pkl'.format(os.path.splitext(os.path.basename(fname))[0]))
