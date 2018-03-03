@@ -2,6 +2,8 @@
 '''
 python port of scam.m a matlab script for arbitrary symbolic nodal analysis 
 from scam.m
+
+comment from scam.m: 
 %This program takes a netlist (similar to SPICE), parses it to derive the
 %circuit equations, then solves them symbolically.  
 %
@@ -13,7 +15,7 @@ __author__ = 'Danyal Ahsanullah'
 __email__ = 'danyal.ahsanullah@gmail.com'
 __url = 'https://github.com/an-oreo/scam-py'
 
-__version_info__ = (0,1,2)
+__version_info__ = (0,2,0)
 __version__ = '.'.join(map(str, __version_info__))
 
 # maybe needed for sympy.preview function
@@ -22,41 +24,84 @@ __version__ = '.'.join(map(str, __version_info__))
 
 import numpy as np
 import sympy as sym
-from datetime import datetime, timedelta
+from time import perf_counter
 from collections import namedtuple
 from itertools import chain
 
-# _PASSIVE = 'RLC'
+_PASSIVE = 'RLC'
 # _SUPPORTED = _PASSIVE + 'OVI'
 _UNSUPPORTED = 'QDZ'
-RUNTIME = timedelta(0)
+RUNTIME = 0
 
 # record containers for differing circuit elements
 _Element = namedtuple('_Element', 'Name Node1 Node2 Value')
 _Vsource = namedtuple('_Vsource', 'Name Node1 Node2 Value')
 _Isource = namedtuple('_Isource', 'Name Node1 Node2 Value')
 _Opamp = namedtuple('_Opamp', 'Name Node1 Node2 Node3')
-
+# opamp order is non inverting, inverting, out. note they assume negative feedback, and work in incorrect applications
 # controls printing a first time info message
 FirstTime_rjla = True
 
 # sympy printer init -- still prints weird on my console unless disable unicode,
 # and even then it seems to be limited to the 80 char console limit even if i use a larger console
-# sym.init_printing()
-# sym.init_printing(use_latex=False)
 sym.init_printing(use_unicode=False)
 # sym.init_printing(use_unicode=False, use_latex=False)
 
 # may end up using something like this for building data matrix,
 # bytearray append/extend for building string and then a final conversion for feeding to sympy
 # should avoid str reallocation and sympify-ing on every build 
-class StrMatrix:
-    """matrix of byte arrays for dynamically building strings in the form of a matrix"""
+
+# TODO: Tests, streamline out some.
+class ByteStrMatrix:
+    """
+    matrix of byte arrays for dynamically building strings in the form of a matrix
+    supports:
+        fast appends
+        resetting entries
+        conversion to sympy acceptable object
+        conversion to flat list
+        iteration
+        indexing from matrix (row,col) notation
+        [0,N) based element indexing with row ascending order
+    """
+    @classmethod
+    def __get_classname(cls):
+        return cls.__name__
     def __init__(self, row,col, initial='0', encoding='ascii', *args, **kwargs):
         self.encoding = encoding
-        self.data = [[bytearray(initial, encoding) for i in range(col)] for i in range(row)]
+        self._data = [[bytearray(initial, encoding) for i in range(col)] for i in range(row)]
+        self._row = row
+        self._col = col
+        super().__init__() 
     def __getitem__(self, index):
-        return self.data[index[0]][index[1]]
+        # TODO: implement slicing
+        try: 
+            return self._data[index[0]][index[1]]
+        except IndexError:
+            raise IndexError('index out of range {!s}'.format(index))
+        except TypeError:
+            try: 
+                row,col = divmod(index,self._row)
+                return self._data[row][col]
+            except IndexError:
+                raise IndexError('index out of range {!s}'.format(index))
+    def __setitem__(self,index, data):
+        self[index].clear()
+        if not isinstance(data, (bytes,bytearray)):
+            self[index].extend(bytes(str(data),self.encoding))
+        else:
+            self[index].extend(data)
+    def __repr__(self):
+        return '{!s} with contents:\n{!s}'.format(self.__get_classname(),'\n'.join(map(str, self._data)))
+    def __str__(self):
+        return str(self.to_matrix_repr())
+    def __len__(self):
+        return self._row*self._col
+    def to_matrix_repr(self):
+        return [[str(entry, self.encoding) for entry in row] for row in self._data]
+    def extend_entry(self,index,data):
+        self[index].extend(bytes(str(data),self.encoding))
+# end ByteStrMatrix
 
 
 def scam(fname):
@@ -75,7 +120,7 @@ def scam(fname):
            'formats': ('U15', 'i4', 'i4', 'U15')})    
     
     # crude timer
-    start_time = datetime.now()
+    start_time = perf_counter()
     
     # Initialize
     numNode = 0  # Number of nodes, not including ground (node 0).
@@ -87,7 +132,7 @@ def scam(fname):
     # Parse the input file
     for name, n1, n2, arg3 in d:
         desig = name[0]
-        if desig in 'RLC':  # passive elements
+        if desig in _PASSIVE:  # passive elements
             try:
                 val = float(arg3)
             except ValueError:
@@ -120,6 +165,7 @@ def scam(fname):
 
     # Preallocate matrices #################################
     G = sym.zeros(numNode,numNode)
+    # G = ByteStrMatrix(numNode,numNode)
     V = sym.zeros(numNode,1)
     I = sym.zeros(numNode,1)
     if (numV+numO)!=0:
@@ -262,8 +308,11 @@ def scam(fname):
         X = V
         Z = I
 
+    # print(A)
+    # print(Z)
     # Solve matrix equation - this is the meat of the algorithm.   
     V = sym.factor(A.inv()*Z)
+    # V = A.inv()*Z
 
     # %Evaluate each of the unknowns in the matrix X.
     # nodes = dict()
@@ -272,11 +321,12 @@ def scam(fname):
 
     # sub in values: 
     Sol = sym.cancel(V.subs([(elem.Name, elem.Value) for elem in chain(Elements,Vsources,Isources) if elem.Value is not np.nan]))
+    # Sol = V.subs([(elem.Name, elem.Value) for elem in chain(Elements,Vsources,Isources) if elem.Value is not np.nan])
 
-    print('Done! Elapsed time = {!s}.'.format(datetime.now()-start_time))
-    # this_run = datetime.now()-start_time
-    # print('Done! Elapsed time = {!s}.'.format(this_run))
-    # RUNTIME += this_run
+    # print('Done! Elapsed time = {!s}.'.format(datetime.now()-start_time))
+    this_run = perf_counter()-start_time
+    print('Done! Elapsed time = {!s}.'.format(this_run))
+    RUNTIME += this_run
     
     print('Netlist')
     for row in d:
@@ -302,11 +352,21 @@ if __name__ == '__main__':
     import sys
     import pickle
     from code import interact 
+
+    class HiddenPrints:
+        def __enter__(self):
+            self._original_stdout = sys.stdout
+            sys.stdout = None
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            sys.stdout = self._original_stdout
+
     def timing(f, n, a):
         global RUNTIME
         r = range(n)
-        for i in r:
-            f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a)
+        with HiddenPrints():
+            for i in r:
+                f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a); f(a)
         print('')
         print(f.__name__, 'avg:',  end='')
         print(RUNTIME/(10*n))
